@@ -1,0 +1,1 @@
+py -m install streamlit pandas openpyxl plotly
