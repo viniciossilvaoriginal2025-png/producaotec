@@ -19,7 +19,7 @@ if arquivo:
 
     COL_BAIRRO = df.columns[8]     # I
     COL_TECNICO = df.columns[18]   # S
-    COL_SERVICO = df.columns[20]   # U
+    COL_SERVICO = df.columns[5]   # U
     COL_ENCAM = df.columns[23]     # X
     COL_FECH = df.columns[31]      # AF
 
