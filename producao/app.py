@@ -76,16 +76,11 @@ if uploaded_file:
             mix = df[col_tipo].value_counts().reset_index()
             mix.columns = ['Tipo', 'Quantidade']
             
-            # --- AJUSTE APLICADO AQUI ---
-            # Filtra para mostrar apenas os itens com 5 ou mais atendimentos
-            mix_filtrado = mix[mix['Quantidade'] >= 5]
+            # --- ÚNICA ALTERAÇÃO AQUI ---
+            mix = mix[mix['Quantidade'] >= 5]
+            # ----------------------------
             
-            # Condição para evitar erro caso nenhum bairro tenha 5 atendimentos
-            if not mix_filtrado.empty:
-                st.plotly_chart(px.pie(mix_filtrado, values='Quantidade', names='Tipo', hole=0.5), use_container_width=True)
-            else:
-                st.warning("Nenhum item atingiu a quantidade mínima de 5.")
-            # -----------------------------
+            st.plotly_chart(px.pie(mix, values='Quantidade', names='Tipo', hole=0.5), use_container_width=True)
 
         st.subheader("📋 Matriz Técnico x Tipo")
         # Tabela dinâmica com totais
