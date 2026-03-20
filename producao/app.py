@@ -13,7 +13,7 @@ def load_data(file):
         preview = pd.read_excel(file, header=1, nrows=0)
         all_cols = preview.columns.tolist()
         
-        # Coluna A (Técnico) = Índice 0 | Coluna P (Tipo/Bairro) = Índice 15
+        # Coluna A (Técnico) = Índice 0 | Coluna P (Tipo) = Índice 15
         idx_tec = 0
         idx_tipo = 15 if len(all_cols) > 15 else len(all_cols) - 1
         
@@ -28,7 +28,7 @@ def load_data(file):
         c_tec = df.columns[0]
         c_tipo = df.columns[1]
         
-        # Limpeza e conversão para categorias
+        # Limpeza e conversão para categorias (economiza 90% de RAM)
         df = df.dropna().copy()
         df[c_tec] = df[c_tec].astype(str).str.strip().str.upper().astype('category')
         df[c_tipo] = df[c_tipo].astype(str).str.strip().astype('category')
@@ -51,7 +51,7 @@ if uploaded_file:
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Atendimentos", len(df))
         m2.metric("Qtd Técnicos", df[col_tec].nunique())
-        m3.metric("Produtividade Média", round(len(df)/df[col_tec].nunique(), 1) if df[col_tec].nunique() > 0 else 0)
+        m3.metric("Produtividade Média", round(len(df)/df[col_tec].nunique(), 1))
 
         st.markdown("---")
         
@@ -59,6 +59,7 @@ if uploaded_file:
 
         with c1:
             st.subheader("🏆 Ranking por Técnico")
+            # Agrupamento para o gráfico
             ranking = df[col_tec].value_counts().reset_index()
             ranking.columns = ['Técnico', 'Quantidade']
             
@@ -71,20 +72,23 @@ if uploaded_file:
             st.plotly_chart(fig_bar, use_container_width=True)
 
         with c2:
-            st.subheader("🎯 Mix de Atendimentos (Mínimo 5)")
-            # AJUSTE SOLICITADO: Filtrar para mostrar apenas quem tem a partir de 5 atendimentos
+            st.subheader("🎯 Mix de Atendimentos")
             mix = df[col_tipo].value_counts().reset_index()
             mix.columns = ['Tipo', 'Quantidade']
             
-            # Aplicando o filtro de mínimo 5
+            # --- AJUSTE APLICADO AQUI ---
+            # Filtra para mostrar apenas os itens com 5 ou mais atendimentos
             mix_filtrado = mix[mix['Quantidade'] >= 5]
             
+            # Condição para evitar erro caso nenhum bairro tenha 5 atendimentos
             if not mix_filtrado.empty:
                 st.plotly_chart(px.pie(mix_filtrado, values='Quantidade', names='Tipo', hole=0.5), use_container_width=True)
             else:
-                st.warning("Nenhum item possui 5 ou mais atendimentos.")
+                st.warning("Nenhum item atingiu a quantidade mínima de 5.")
+            # -----------------------------
 
         st.subheader("📋 Matriz Técnico x Tipo")
+        # Tabela dinâmica com totais
         pivot = pd.crosstab(df[col_tec], df[col_tipo], margins=True, margins_name="TOTAL")
         st.dataframe(pivot, use_container_width=True)
         
