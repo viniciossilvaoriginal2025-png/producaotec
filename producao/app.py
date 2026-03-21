@@ -100,12 +100,20 @@ if arquivo:
     st.sidebar.header("🗺️ Criar Rotas")
     with st.sidebar.expander("➕ Nova Rota de Atendimento"):
         nome_nova_rota = st.text_input("Nome da Rota (ex: Rota Leste)")
+        
+        # Novo campo para definir a quantidade de técnicos
+        qtd_tecnicos = st.number_input("Quantidade de Técnicos", min_value=1, value=1, step=1)
+        
         bairros_unicos = sorted(df[COL_BAIRRO].unique())
         bairros_selecionados_rota = st.multiselect("Selecione os Bairros da Rota", bairros_unicos)
         
         if st.button("Salvar Rota"):
             if nome_nova_rota and bairros_selecionados_rota:
-                st.session_state['rotas_personalizadas'][nome_nova_rota] = bairros_selecionados_rota
+                # Salva os bairros e a quantidade de técnicos na estrutura da rota
+                st.session_state['rotas_personalizadas'][nome_nova_rota] = {
+                    "bairros": bairros_selecionados_rota,
+                    "qtd_tecnicos": qtd_tecnicos
+                }
                 st.success(f"Rota '{nome_nova_rota}' salva com sucesso!")
             else:
                 st.warning("Preencha o nome e selecione pelo menos um bairro.")
@@ -113,8 +121,16 @@ if arquivo:
         if st.session_state['rotas_personalizadas']:
             st.markdown("---")
             st.markdown("**Rotas Ativas:**")
-            for r_nome, r_bairros in st.session_state['rotas_personalizadas'].items():
-                st.markdown(f"- **{r_nome}**: {len(r_bairros)} bairros")
+            for r_nome, r_dados in st.session_state['rotas_personalizadas'].items():
+                # Tratamento para rotas criadas antes desta atualização
+                if isinstance(r_dados, list):
+                    qtd_t = 1
+                    len_b = len(r_dados)
+                else:
+                    qtd_t = r_dados.get("qtd_tecnicos", 1)
+                    len_b = len(r_dados.get("bairros", []))
+                    
+                st.markdown(f"- **{r_nome}**: {len_b} bairros | 👷 {qtd_t} técnico(s)")
             if st.button("Limpar Rotas"):
                 st.session_state['rotas_personalizadas'] = {}
                 st.rerun()
@@ -126,9 +142,14 @@ if arquivo:
 
     # --- MAPEAMENTO DA ROTA NO DATAFRAME ---
     def obter_rota(bairro):
-        for nome_rota, lista_bairros in st.session_state['rotas_personalizadas'].items():
-            if bairro in lista_bairros:
-                return nome_rota
+        for nome_rota, dados_rota in st.session_state['rotas_personalizadas'].items():
+            # Verifica se é uma lista (versão antiga) ou dicionário (versão nova)
+            if isinstance(dados_rota, list):
+                if bairro in dados_rota:
+                    return nome_rota
+            else:
+                if bairro in dados_rota.get("bairros", []):
+                    return nome_rota
         return "Sem Rota Definida"
 
     df_filtrado["ROTA_PERSONALIZADA"] = df_filtrado[COL_BAIRRO].apply(obter_rota)
