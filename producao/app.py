@@ -108,7 +108,35 @@ if arquivo:
     prod_tecnico = df_filtrado.groupby(COL_TECNICO).size().sort_values(ascending=False)
 
     st.dataframe(prod_tecnico)
-    st.bar_chart(prod_tecnico)
+    
+    # Converte para DataFrame para usar no Plotly
+    df_tecnicos = prod_tecnico.reset_index()
+    df_tecnicos.columns = ["Técnico", "Quantidade"]
+
+    # Calcula o total para exibir no gráfico
+    total_somado_tec = df_tecnicos["Quantidade"].sum()
+
+    # Cria o gráfico de colunas com o total acima
+    fig_tecnicos = px.bar(
+        df_tecnicos,
+        x="Técnico",
+        y="Quantidade",
+        text="Quantidade",
+        title=f"Total de procedimentos exibidos: {total_somado_tec}"
+    )
+    
+    # Posiciona o texto do lado de fora (acima) da coluna
+    fig_tecnicos.update_traces(textposition='outside')
+    
+    # Dá uma margem extra no topo para o número não cortar e inclina os textos
+    max_y_tec = df_tecnicos["Quantidade"].max() if not df_tecnicos.empty else 10
+    fig_tecnicos.update_layout(
+        yaxis_range=[0, max_y_tec * 1.15],
+        xaxis_tickangle=-45,
+        margin=dict(t=40)
+    )
+
+    st.plotly_chart(fig_tecnicos, use_container_width=True)
 
     # =========================
     # PRODUÇÃO POR SERVIÇO
@@ -127,7 +155,7 @@ if arquivo:
     st.subheader("🏘️ Atendimentos por Bairro")
 
     bairro_counts = df_filtrado[COL_BAIRRO].value_counts()
-    bairro_counts = bairro_counts[bairro_counts >= 1]
+    bairro_counts = bairro_counts[bairro_counts >= 5]
 
     st.dataframe(bairro_counts)
     
