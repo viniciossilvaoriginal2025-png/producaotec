@@ -35,7 +35,7 @@ if 'rotas_personalizadas' not in st.session_state:
 # Mapeamento de Cores para o Status
 CORES_STATUS = {
     "SOLUCIONADO": "#2ecc71", # Verde
-    "CONTATO CLIENTE / VISITA AGENDADA": "#f39c12" # Laranja
+    "PENDENTE": "#f39c12" # Laranja
 }
 
 arquivo = st.file_uploader("Enviar arquivo Excel", type=["xlsx"])
@@ -150,23 +150,22 @@ if arquivo:
         idx_guess = 0
         for i, col in enumerate(df.columns):
             amostra = df[col].dropna().astype(str).str.upper()
-            if amostra.str.contains("SOLUCIONADO|VISITA_AGENDADA|CONTATO_CLIENTE|VISITA AGENDADA|CONTATO CLIENTE", regex=True).any():
+            if amostra.str.contains("SOLUCIONADO|PENDENTE|VISITA_AGENDADA|CONTATO_CLIENTE", regex=True).any():
                 idx_guess = i
                 break
                 
         coluna_status = st.selectbox("Qual é a coluna de Status?", df.columns, index=idx_guess)
         
-        # --- NOVO: UNIFICAR CONTATO CLIENTE E VISITA AGENDADA ---
-        mask_unificar = df[coluna_status].astype(str).str.upper().isin([
-            "VISITA_AGENDADA", "VISITA AGENDADA", "CONTATO_CLIENTE", "CONTATO CLIENTE"
-        ])
-        df.loc[mask_unificar, coluna_status] = "CONTATO CLIENTE / VISITA AGENDADA"
+        # --- NOVO: TUDO QUE NÃO É SOLUCIONADO VIRA PENDENTE ---
+        mask_solucionado = df[coluna_status].astype(str).str.strip().str.upper() == "SOLUCIONADO"
+        df.loc[~mask_solucionado, coluna_status] = "PENDENTE"
+        df.loc[mask_solucionado, coluna_status] = "SOLUCIONADO"
         # --------------------------------------------------------
 
         status_unicos = sorted(df[coluna_status].dropna().astype(str).unique())
         
         # Define os valores padrão procurados
-        alvos = ["SOLUCIONADO", "CONTATO CLIENTE / VISITA AGENDADA"]
+        alvos = ["SOLUCIONADO", "PENDENTE"]
         status_default = [s for s in status_unicos if any(alvo in str(s).upper() for alvo in alvos)]
         
         status_sel = st.multiselect(
@@ -577,7 +576,7 @@ if arquivo:
     def colorir_status(val):
         if val == 'SOLUCIONADO':
             return 'background-color: #d4edda; color: #155724' # Verde claro
-        elif val == 'CONTATO CLIENTE / VISITA AGENDADA':
+        elif val == 'PENDENTE':
             return 'background-color: #fff3cd; color: #856404' # Amarelo claro
         return ''
 
