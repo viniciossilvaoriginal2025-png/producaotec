@@ -126,7 +126,7 @@ if arquivo:
     st.subheader("🏘️ Atendimentos por Bairro")
 
     bairro_counts = df_filtrado[COL_BAIRRO].value_counts()
-    bairro_counts = bairro_counts[bairro_counts >= 5]
+    bairro_counts = bairro_counts[bairro_counts >= 1]
 
     st.dataframe(bairro_counts)
     st.bar_chart(bairro_counts)
