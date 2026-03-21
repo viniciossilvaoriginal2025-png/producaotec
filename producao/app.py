@@ -155,7 +155,7 @@ if arquivo:
     st.subheader("🏘️ Atendimentos por Bairro")
 
     bairro_counts = df_filtrado[COL_BAIRRO].value_counts()
-    bairro_counts = bairro_counts[bairro_counts >= 1]
+    bairro_counts = bairro_counts[bairro_counts >= 5]
 
     st.dataframe(bairro_counts)
     
@@ -231,6 +231,50 @@ if arquivo:
     )
 
     st.dataframe(matriz, use_container_width=True)
+
+    # =========================
+    # ATUAÇÃO POR ROTA (BAIRROS DO TÉCNICO)
+    # =========================
+
+    st.subheader("📍 Atuação por Rota (Bairros por Técnico)")
+
+    if not df_filtrado.empty:
+        tec_rota_sel = st.selectbox(
+            "Selecione o Técnico para ver suas áreas de maior atuação:",
+            sorted(df_filtrado[COL_TECNICO].unique())
+        )
+
+        # Filtra apenas os dados do técnico selecionado
+        df_tec_rota = df_filtrado[df_filtrado[COL_TECNICO] == tec_rota_sel]
+        
+        # Conta a quantidade por bairro
+        rota_ranking = df_tec_rota[COL_BAIRRO].value_counts().reset_index()
+        rota_ranking.columns = ["Bairro", "Quantidade"]
+
+        # Calcula o total para o título do gráfico
+        total_rota = rota_ranking["Quantidade"].sum()
+
+        st.dataframe(rota_ranking, use_container_width=True)
+
+        # Cria o gráfico interativo se houver dados
+        if not rota_ranking.empty:
+            fig_rota = px.bar(
+                rota_ranking,
+                x="Bairro",
+                y="Quantidade",
+                text="Quantidade",
+                title=f"Total de atendimentos de {tec_rota_sel} exibidos: {total_rota}"
+            )
+            fig_rota.update_traces(textposition='outside')
+            
+            # Ajusta a escala e margens
+            max_y_rota = rota_ranking["Quantidade"].max()
+            fig_rota.update_layout(
+                yaxis_range=[0, max_y_rota * 1.15],
+                xaxis_tickangle=-45,
+                margin=dict(t=40)
+            )
+            st.plotly_chart(fig_rota, use_container_width=True)
 
     # =========================
     # TEMPO MÉDIO
