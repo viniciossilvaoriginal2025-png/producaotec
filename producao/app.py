@@ -155,7 +155,7 @@ if arquivo:
     st.subheader("🏘️ Atendimentos por Bairro")
 
     bairro_counts = df_filtrado[COL_BAIRRO].value_counts()
-    bairro_counts = bairro_counts[bairro_counts >= 1]
+    bairro_counts = bairro_counts[bairro_counts >= =1]
 
     st.dataframe(bairro_counts)
     
@@ -308,6 +308,7 @@ if arquivo:
     )
 
     mostrar = [
+        "ROTA_PERSONALIZADA",
         COL_BAIRRO,
         COL_TECNICO,
         COL_SERVICO,
