@@ -38,178 +38,220 @@ CORES_STATUS = {
     "PENDENTE": "#f39c12" # Laranja
 }
 
+df = None
+coluna_status = None
+
 arquivo = st.file_uploader("Enviar arquivo Excel", type=["xlsx"])
 
 if arquivo:
-
     df = pd.read_excel(arquivo, header=1)
 
-    # =========================
-    # COLUNAS
-    # =========================
+    if not df.empty:
+        # --- 🛠️ 1. MAPEAMENTO DE COLUNAS E PREVENÇÃO DE PERDA DE DADOS (O BUG DOS 8 PENDENTES) ---
+        # Muitas Visitas Agendadas não possuem um Técnico ou Bairro atribuído.
+        # Ao deixar como nulo/vazio, os filtros do Pandas apagavam esses itens. Agora preenchemos com texto.
+        try:
+            COL_BAIRRO = df.columns[8]     # I
+            COL_TECNICO = df.columns[18]   # S
+            COL_SERVICO = df.columns[20]   # U
+            COL_ENCAM = df.columns[23]     # X
+            COL_FECH = df.columns[31]      # AF
+        except IndexError:
+            st.error("O Excel não tem colunas suficientes. Verifique o formato do arquivo (o cabeçalho deve estar na linha 2).")
+            st.stop()
 
-    COL_BAIRRO = df.columns[8]     # I
-    COL_TECNICO = df.columns[18]   # S
-    COL_SERVICO = df.columns[20]   # U
-    COL_ENCAM = df.columns[23]     # X
-    COL_FECH = df.columns[31]      # AF
+        df[COL_BAIRRO] = df[COL_BAIRRO].astype(str).str.strip().replace(["nan", "None", ""], "Sem Bairro")
+        df[COL_TECNICO] = df[COL_TECNICO].astype(str).str.strip().replace(["nan", "None", ""], "Sem Técnico")
+        df[COL_SERVICO] = df[COL_SERVICO].astype(str).str.strip().replace(["nan", "None", ""], "Sem Serviço")
 
-    # =========================
-    # LIMPEZA
-    # =========================
-
-    df[COL_BAIRRO] = (
-        df[COL_BAIRRO]
-        .astype(str)
-        .str.strip()
-        .replace(["nan", "None", ""], "Sem bairro")
-    )
-
-    # =========================
-    # DATAS
-    # =========================
-
-    df[COL_ENCAM] = pd.to_datetime(
-        df[COL_ENCAM].astype(str).str.replace(".", ":", regex=False),
-        dayfirst=True,
-        errors="coerce"
-    )
-
-    df[COL_FECH] = pd.to_datetime(
-        df[COL_FECH].astype(str).str.replace(".", ":", regex=False),
-        dayfirst=True,
-        errors="coerce"
-    )
-
-    df["TEMPO_DELTA"] = df[COL_FECH] - df[COL_ENCAM]
-
-    def formatar_tempo(td):
-        if pd.isna(td):
-            return ""
-        total = int(td.total_seconds())
-        d = total // 86400
-        h = (total % 86400) // 3600
-        m = (total % 3600) // 60
-        s = total % 60
-        return f"{d}d {h}h {m}m {s}s"
-
-    df["TEMPO_DHMS"] = df["TEMPO_DELTA"].apply(formatar_tempo)
-
-    # =========================
-    # FILTROS
-    # =========================
-
-    st.sidebar.header("🔎 Filtros")
-
-    # Filtro de Data (Calendário)
-    with st.sidebar.expander("📅 Período (Data de Fechamento)", expanded=True):
-        valid_dates = df[COL_FECH].dropna()
-        if not valid_dates.empty:
-            min_date = valid_dates.min().date()
-            max_date = valid_dates.max().date()
-        else:
-            min_date = datetime.today().date()
-            max_date = datetime.today().date()
-
-        start_date = st.date_input(
-            "Data Inicial:",
-            value=min_date,
-            min_value=min_date,
-            max_value=max_date
-        )
-        
-        end_date = st.date_input(
-            "Data Final:",
-            value=max_date,
-            min_value=min_date,
-            max_value=max_date
-        )
-
-        if start_date <= end_date:
-            # Gera todos os dias dentro do intervalo selecionado
-            dias_no_intervalo = pd.date_range(start=start_date, end=end_date).date.tolist()
-            dias_formatados = [d.strftime("%d/%m/%Y") for d in dias_no_intervalo]
-            
-            dias_selecionados_str = st.multiselect(
-                "Dias a incluir (remova para ignorar):",
-                options=dias_formatados,
-                default=dias_formatados,
-                help="Todos os dias do intervalo começam marcados. Clique no 'X' para remover dias específicos (ex: finais de semana)."
-            )
-            
-            dias_validos = [datetime.strptime(d, "%d/%m/%Y").date() for d in dias_selecionados_str]
-        else:
-            dias_validos = []
-            st.error("⚠️ A Data Inicial não pode ser maior que a Data Final.")
-        
-        incluir_vazios = st.checkbox("Incluir registros sem data de fechamento", value=True)
-
-    # NOVO: Filtro de Status
-    with st.sidebar.expander("📌 Status / Situação", expanded=True):
-        # Tenta descobrir automaticamente qual é a coluna de status
-        idx_guess = 0
-        for i, col in enumerate(df.columns):
-            amostra = df[col].dropna().astype(str).str.upper()
-            if amostra.str.contains("SOLUCIONADO|PENDENTE|VISITA_AGENDADA|CONTATO_CLIENTE", regex=True).any():
-                idx_guess = i
+        # --- 🚀 2. DETEÇÃO EXATA DA COLUNA DE STATUS ("STATUS ATENDIMENTO" ou "Q") ---
+        col_status_otim = None
+        for col in df.columns:
+            if str(col).strip().upper() in ["STATUS ATENDIMENTO", "Q"]:
+                col_status_otim = col
                 break
                 
-        coluna_status = st.selectbox("Qual é a coluna de Status?", df.columns, index=idx_guess)
-        
-        # --- NOVO: TUDO QUE NÃO É SOLUCIONADO VIRA PENDENTE ---
-        mask_solucionado = df[coluna_status].astype(str).str.strip().str.upper() == "SOLUCIONADO"
-        df.loc[~mask_solucionado, coluna_status] = "PENDENTE"
-        df.loc[mask_solucionado, coluna_status] = "SOLUCIONADO"
-        # --------------------------------------------------------
+        # Fallback de segurança
+        if not col_status_otim:
+            for col in df.columns:
+                amostra = df[col].dropna().astype(str).str.strip().str.upper()
+                if amostra.isin(["SOLUCIONADO", "VISITA_AGENDADA", "CONTATO_CLIENTE"]).any():
+                    col_status_otim = col
+                    break
 
-        status_unicos = sorted(df[coluna_status].dropna().astype(str).unique())
-        
-        # Define os valores padrão procurados
-        alvos = ["SOLUCIONADO", "PENDENTE"]
-        status_default = [s for s in status_unicos if any(alvo in str(s).upper() for alvo in alvos)]
-        
-        status_sel = st.multiselect(
-            "Selecione os Status para análise:", 
-            options=status_unicos, 
-            default=status_default if status_default else status_unicos
+        col_visita_otim = None
+        for col in df.columns:
+            if "GEROU_VISITA" in str(col).upper() or "GEROU VISITA" in str(col).upper():
+                col_visita_otim = col
+                break
+                
+        # --- 🎯 3. APLICAÇÃO DA REGRA DE NEGÓCIO E FILTRO ---
+        if col_status_otim:
+            # Substituímos os underlines por espaços para garantir que qualquer variação de escrita seja lida
+            status_norm = df[col_status_otim].astype(str).str.strip().str.upper().str.replace("_", " ")
+            
+            # Apanha TUDO o que tiver "VISITA" ou "CONTATO" de forma tolerante a erros de digitação
+            mask_pendentes = status_norm.str.contains('VISITA|CONTATO|AGENDAD', regex=True, na=False)
+            mask_solucionado = status_norm.str.contains('SOLUCIONADO', regex=True, na=False)
+            
+            if col_visita_otim:
+                mask_gerou_visita = df[col_visita_otim].astype(str).str.strip().str.upper().isin(['SIM', 'S', 'TRUE', '1', 'VERDADEIRO'])
+                mask_solucionado_valido = mask_solucionado & mask_gerou_visita
+            else:
+                mask_solucionado_valido = mask_solucionado
+                
+            # Sobrescreve o dataframe apenas com os dados úteis
+            df = df[mask_pendentes | mask_solucionado_valido].copy()
+            
+            if df.empty:
+                st.warning("⚠️ Nenhum registro restou após aplicar o filtro de otimização (Apenas Solucionados que geraram visita, Visita Agendada ou Contato Cliente).")
+            else:
+                # Padronizamos os nomes finais para o Dashboard não se confundir
+                # Acedemos ao DataFrame filtrado
+                status_filtrado = df[col_status_otim].astype(str).str.strip().str.upper().str.replace("_", " ")
+                
+                mask_final_pendente = status_filtrado.str.contains('VISITA|CONTATO|AGENDAD', regex=True, na=False)
+                mask_final_solucionado = status_filtrado.str.contains('SOLUCIONADO', regex=True, na=False)
+                
+                df.loc[mask_final_pendente, col_status_otim] = 'PENDENTE'
+                df.loc[mask_final_solucionado, col_status_otim] = 'SOLUCIONADO'
+                
+                # Definimos a variável global que será usada para agrupar os gráficos
+                coluna_status = col_status_otim
+
+        # =========================
+        # FORMATAÇÃO DE DATAS
+        # =========================
+
+        df[COL_ENCAM] = pd.to_datetime(
+            df[COL_ENCAM].astype(str).str.replace(".", ":", regex=False),
+            dayfirst=True,
+            errors="coerce"
         )
 
-    tecnicos = sorted(df[COL_TECNICO].dropna().unique())
-    servicos = sorted(df[COL_SERVICO].dropna().unique())
+        df[COL_FECH] = pd.to_datetime(
+            df[COL_FECH].astype(str).str.replace(".", ":", regex=False),
+            dayfirst=True,
+            errors="coerce"
+        )
 
-    with st.sidebar.expander("👷 Técnicos"):
+        df["TEMPO_DELTA"] = df[COL_FECH] - df[COL_ENCAM]
 
-        marcar_todos_tec = st.checkbox("Selecionar todos técnicos", True)
+        def formatar_tempo(td):
+            if pd.isna(td):
+                return ""
+            total = int(td.total_seconds())
+            d = total // 86400
+            h = (total % 86400) // 3600
+            m = (total % 3600) // 60
+            s = total % 60
+            return f"{d}d {h}h {m}m {s}s"
 
-        tecnicos_sel = []
-        for t in tecnicos:
-            if st.checkbox(t, value=marcar_todos_tec, key=f"tec_{t}"):
-                tecnicos_sel.append(t)
+        df["TEMPO_DHMS"] = df["TEMPO_DELTA"].apply(formatar_tempo)
 
-    with st.sidebar.expander("🛠️ Serviços"):
+        # =========================
+        # FILTROS (BARRA LATERAL)
+        # =========================
 
-        marcar_todos_serv = st.checkbox("Selecionar todos serviços", True)
+        st.sidebar.header("🔎 Filtros")
 
-        servicos_sel = []
-        for s in servicos:
-            if st.checkbox(s, value=marcar_todos_serv, key=f"serv_{s}"):
-                servicos_sel.append(s)
+        # Filtro de Data (Calendário)
+        with st.sidebar.expander("📅 Período (Data de Fechamento)", expanded=True):
+            valid_dates = df[COL_FECH].dropna()
+            if not valid_dates.empty:
+                min_date = valid_dates.min().date()
+                max_date = valid_dates.max().date()
+            else:
+                min_date = datetime.today().date()
+                max_date = datetime.today().date()
 
-    # --- LÓGICA DE APLICAÇÃO DOS FILTROS ---
-    # Ajusta as horas para pegar o dia inteiro
-    start_dt = pd.to_datetime(start_date)
-    end_dt = pd.to_datetime(end_date) + pd.Timedelta(days=1, seconds=-1)
+            start_date = st.date_input(
+                "Data Inicial:",
+                value=min_date,
+                min_value=min_date,
+                max_value=max_date
+            )
+            
+            end_date = st.date_input(
+                "Data Final:",
+                value=max_date,
+                min_value=min_date,
+                max_value=max_date
+            )
 
-    mask_tecnico = df[COL_TECNICO].isin(tecnicos_sel)
-    mask_servico = df[COL_SERVICO].isin(servicos_sel)
-    mask_status = df[coluna_status].isin(status_sel)
-    
-    if incluir_vazios:
-        mask_data = df[COL_FECH].dt.date.isin(dias_validos) | df[COL_FECH].isna()
-    else:
-        mask_data = df[COL_FECH].dt.date.isin(dias_validos)
+            if start_date <= end_date:
+                # Gera todos os dias dentro do intervalo selecionado
+                dias_no_intervalo = pd.date_range(start=start_date, end=end_date).date.tolist()
+                dias_formatados = [d.strftime("%d/%m/%Y") for d in dias_no_intervalo]
+                
+                dias_selecionados_str = st.multiselect(
+                    "Dias a incluir (remova para ignorar):",
+                    options=dias_formatados,
+                    default=dias_formatados,
+                    help="Todos os dias do intervalo começam marcados. Clique no 'X' para remover dias específicos (ex: finais de semana)."
+                )
+                
+                dias_validos = [datetime.strptime(d, "%d/%m/%Y").date() for d in dias_selecionados_str]
+            else:
+                dias_validos = []
+                st.error("⚠️ A Data Inicial não pode ser maior que a Data Final.")
+            
+            incluir_vazios = st.checkbox("Incluir registros sem data de fechamento (Pendentes)", value=True)
 
-    df_filtrado = df[mask_tecnico & mask_servico & mask_data & mask_status].copy()
+        # Filtro de Status visível
+        with st.sidebar.expander("📌 Status / Situação", expanded=True):
+            if coluna_status:
+                st.text_input("Coluna Identificada:", value=coluna_status, disabled=True)
+                status_unicos = sorted(df[coluna_status].dropna().astype(str).unique())
+                status_sel = st.multiselect(
+                    "Selecione os Status para análise:", 
+                    options=status_unicos, 
+                    default=status_unicos
+                )
+            else:
+                st.error("Coluna de Status não encontrada.")
+                status_sel = []
+
+        # Filtros de Técnicos e Serviços
+        tecnicos = sorted(df[COL_TECNICO].dropna().unique()) if not df.empty else []
+        servicos = sorted(df[COL_SERVICO].dropna().unique()) if not df.empty else []
+
+        with st.sidebar.expander("👷 Técnicos"):
+            marcar_todos_tec = st.checkbox("Selecionar todos técnicos", True)
+            tecnicos_sel = []
+            for t in tecnicos:
+                if st.checkbox(t, value=marcar_todos_tec, key=f"tec_{t}"):
+                    tecnicos_sel.append(t)
+
+        with st.sidebar.expander("🛠️ Serviços"):
+            marcar_todos_serv = st.checkbox("Selecionar todos serviços", True)
+            servicos_sel = []
+            for s in servicos:
+                if st.checkbox(s, value=marcar_todos_serv, key=f"serv_{s}"):
+                    servicos_sel.append(s)
+
+        # --- LÓGICA DE APLICAÇÃO DOS FILTROS FINAIS ---
+        if not df.empty and coluna_status:
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date) + pd.Timedelta(days=1, seconds=-1)
+
+            mask_tecnico = df[COL_TECNICO].isin(tecnicos_sel)
+            mask_servico = df[COL_SERVICO].isin(servicos_sel)
+            mask_status = df[coluna_status].isin(status_sel)
+            
+            if incluir_vazios:
+                mask_data = df[COL_FECH].dt.date.isin(dias_validos) | df[COL_FECH].isna()
+            else:
+                mask_data = df[COL_FECH].dt.date.isin(dias_validos)
+
+            df_filtrado = df[mask_tecnico & mask_servico & mask_data & mask_status].copy()
+        else:
+            df_filtrado = pd.DataFrame()
+
+# =========================
+# GERAÇÃO DO DASHBOARD
+# =========================
+if df is not None and not df.empty and not df_filtrado.empty and coluna_status:
 
     # --- SEÇÃO: GERENCIAR ROTAS ---
     st.sidebar.header("🗺️ Gerenciar Rotas")
@@ -373,7 +415,7 @@ if arquivo:
     if not df_filtrado.empty:
         # Filtrar bairros com >= 5 atendimentos no total
         bairro_totals = df_filtrado[COL_BAIRRO].value_counts()
-        bairros_validos = bairro_totals[bairro_totals >= 1].index.tolist()
+        bairros_validos = bairro_totals[bairro_totals >= 5].index.tolist()
         df_bairros_filtrado = df_filtrado[df_filtrado[COL_BAIRRO].isin(bairros_validos)]
 
         if not df_bairros_filtrado.empty:
@@ -416,7 +458,7 @@ if arquivo:
 
             fig_rotas = px.bar(
                 df_rotas_status,
-                x="ROTA_PERSONALIZADA",  # CORRIGIDO: Nome da coluna correto para o eixo X
+                x="ROTA_PERSONALIZADA",
                 y="Quantidade",
                 color=coluna_status,
                 text="Quantidade",
@@ -646,6 +688,9 @@ if arquivo:
             "relatorio_producao.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+elif arquivo is not None:
+    pass # Os dados não passaram na validação do filtro
 
 else:
     st.info("Envie o Excel para iniciar.")
