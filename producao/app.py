@@ -256,25 +256,36 @@ if df is not None and not df.empty and not df_filtrado.empty and coluna_status:
     # --- SEÇÃO: GERENCIAR ROTAS ---
     st.sidebar.header("🗺️ Gerenciar Rotas")
     
+    # Exibe a mensagem de sucesso que sobreviveu ao recarregamento da página
+    if 'msg_rota' in st.session_state:
+        st.sidebar.success(st.session_state['msg_rota'])
+        del st.session_state['msg_rota']
+    
     bairros_unicos = sorted(df[COL_BAIRRO].unique())
     
     with st.sidebar.expander("➕ Nova Rota"):
-        nome_nova_rota = st.text_input("Nome da Rota (ex: Rota Leste)", key="novo_nome")
-        qtd_tecnicos = st.number_input("Quantidade de Técnicos", min_value=1, value=1, step=1, key="nova_qtd")
-        bairros_selecionados_rota = st.multiselect("Selecione os Bairros da Rota", bairros_unicos, key="novos_bairros")
-        
-        if st.button("Salvar Nova Rota"):
-            if nome_nova_rota and bairros_selecionados_rota:
-                # Salva os bairros e a quantidade de técnicos na estrutura da rota
-                st.session_state['rotas_personalizadas'][nome_nova_rota] = {
-                    "bairros": bairros_selecionados_rota,
-                    "qtd_tecnicos": qtd_tecnicos
-                }
-                salvar_rotas(st.session_state['rotas_personalizadas']) # Salva no arquivo
-                st.success(f"Rota '{nome_nova_rota}' salva com sucesso!")
-                st.rerun()
-            else:
-                st.warning("Preencha o nome e selecione pelo menos um bairro.")
+        # O uso de st.form garante que os campos sejam limpos (clear_on_submit) após gravar
+        with st.form("form_nova_rota", clear_on_submit=True):
+            nome_nova_rota = st.text_input("Nome da Rota (ex: Rota Leste)")
+            qtd_tecnicos = st.number_input("Quantidade de Técnicos", min_value=1, value=1, step=1)
+            bairros_selecionados_rota = st.multiselect("Selecione os Bairros da Rota", bairros_unicos)
+            
+            if st.form_submit_button("Salvar Nova Rota"):
+                if nome_nova_rota and bairros_selecionados_rota:
+                    # Copia, atualiza e reatribui para forçar o Streamlit a reconhecer a mudança na memória
+                    rotas_atuais = dict(st.session_state['rotas_personalizadas'])
+                    rotas_atuais[nome_nova_rota] = {
+                        "bairros": bairros_selecionados_rota,
+                        "qtd_tecnicos": qtd_tecnicos
+                    }
+                    st.session_state['rotas_personalizadas'] = rotas_atuais
+                    salvar_rotas(rotas_atuais) # Salva no arquivo
+                    
+                    # Guarda a mensagem para ser exibida DEPOIS que a página recarregar
+                    st.session_state['msg_rota'] = f"Rota '{nome_nova_rota}' salva com sucesso!"
+                    st.rerun()
+                else:
+                    st.error("Preencha o nome e selecione pelo menos um bairro.")
     
     # Se houver rotas, mostra o menu de edição
     if st.session_state['rotas_personalizadas']:
@@ -306,27 +317,33 @@ if df is not None and not df.empty and not df_filtrado.empty and coluna_status:
                 col_salvar, col_excluir = st.columns(2)
                 
                 with col_salvar:
-                    if st.button("Salvar"):
+                    if st.button("Salvar Alterações"):
                         if edit_nome and edit_bairros:
+                            rotas_atuais = dict(st.session_state['rotas_personalizadas'])
                             # Se mudou o nome, exclui a chave antiga
                             if edit_nome != rota_para_editar:
-                                del st.session_state['rotas_personalizadas'][rota_para_editar]
+                                del rotas_atuais[rota_para_editar]
                             
-                            st.session_state['rotas_personalizadas'][edit_nome] = {
+                            rotas_atuais[edit_nome] = {
                                 "bairros": edit_bairros,
                                 "qtd_tecnicos": edit_qtd
                             }
-                            salvar_rotas(st.session_state['rotas_personalizadas']) # Salva no arquivo
-                            st.success("Rota atualizada!")
+                            st.session_state['rotas_personalizadas'] = rotas_atuais
+                            salvar_rotas(rotas_atuais) # Salva no arquivo
+                            
+                            st.session_state['msg_rota'] = "Rota atualizada com sucesso!"
                             st.rerun()
                         else:
-                            st.warning("Preencha o nome e os bairros.")
+                            st.error("Preencha o nome e os bairros.")
                 
                 with col_excluir:
-                    if st.button("Excluir"):
-                        del st.session_state['rotas_personalizadas'][rota_para_editar]
-                        salvar_rotas(st.session_state['rotas_personalizadas']) # Salva no arquivo
-                        st.success("Rota excluída!")
+                    if st.button("Excluir Rota"):
+                        rotas_atuais = dict(st.session_state['rotas_personalizadas'])
+                        del rotas_atuais[rota_para_editar]
+                        st.session_state['rotas_personalizadas'] = rotas_atuais
+                        salvar_rotas(rotas_atuais) # Salva no arquivo
+                        
+                        st.session_state['msg_rota'] = "Rota excluída com sucesso!"
                         st.rerun()
 
         st.sidebar.markdown("---")
@@ -343,7 +360,8 @@ if df is not None and not df.empty and not df_filtrado.empty and coluna_status:
             
         if st.sidebar.button("Limpar Todas as Rotas"):
             st.session_state['rotas_personalizadas'] = {}
-            salvar_rotas(st.session_state['rotas_personalizadas']) # Salva no arquivo (limpa ele)
+            salvar_rotas({}) # Limpa o arquivo
+            st.session_state['msg_rota'] = "Todas as rotas foram removidas."
             st.rerun()
 
     # --- MAPEAMENTO DA ROTA NO DATAFRAME ---
